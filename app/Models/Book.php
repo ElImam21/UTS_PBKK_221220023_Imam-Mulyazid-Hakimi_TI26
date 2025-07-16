@@ -23,4 +23,14 @@ class Book extends Model
         'year_publised',
         'stock',
     ];
+    public static function rules()
+    {
+        return [
+            'title' => 'required|string|unique:books',
+            'isbn' => 'required|string|unique:books',
+            'publisher' => 'required|string',
+            'year_publised' => 'required|string',
+            'stock' => 'required|integer'
+        ];
+    }
 }

@@ -4,8 +4,6 @@ namespace App\Http\Controllers;
 
 use Illuminate\Routing\Controller;
 use App\Models\BookAuthor;
-use App\Models\Book;
-use App\Models\Author;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -17,42 +15,75 @@ class BookAuthorsController extends Controller
         $this->middleware('auth:sanctum');
     }
 
+    private function isAdminOrManager()
+    {
+        $user = auth()->user();
+        return $user && in_array($user->email, ['admin@gmail.com', 'manager@gmail.com']);
+    }
+
     // ========== CREATE ==========
     public function store(Request $request)
     {
-        $user = Auth::user();
-
-        // Hanya admin dan manager
-        if (!in_array($user->email, ['admin@gmail.com', 'manager@gmail.com'])) {
-            return response()->json(['message' => 'Akses ditolak'], 403);
+        if (!$this->isAdminOrManager()) {
+            return response()->json(['message' => 'Akses di tolak'], 403);
         }
 
         $validated = $request->validate([
-            'book_id' => 'required|string',
-            'author_id' => 'required|string',
+            'book_id' => 'required|exists:books,book_id',
+            'author_id' => 'required|exists:authors,author_id',
         ]);
 
-        // Pastikan book_id dan author_id ada di tabel masing-masing
-        if (!Book::where('book_id', $validated['book_id'])->exists()) {
-            return response()->json(['message' => 'book_id tidak ditemukan'], 404);
-        }
+        // Tambahan: validasi relasi tidak boleh duplikat
+        $exists = BookAuthor::where('book_id', $validated['book_id'])
+            ->where('author_id', $validated['author_id'])
+            ->exists();
 
-        if (!Author::where('author_id', $validated['author_id'])->exists()) {
-            return response()->json(['message' => 'author_id tidak ditemukan'], 404);
+        if ($exists) {
+            return response()->json(['message' => 'Relasi buku-penulis sudah ada'], 409);
         }
 
         $bookAuthor = BookAuthor::create($validated);
+        $bookAuthor->load('book', 'author');
 
-        return response()->json(['message' => 'Data berhasil ditambahkan', 'data' => $bookAuthor], 201);
+        return response()->json([
+            'book_id' => $bookAuthor->book_id,
+            'author_id' => $bookAuthor->author_id,
+            'book' => $bookAuthor->book,
+            'author' => $bookAuthor->author,
+        ], 201);
     }
 
     // ========== INDEX (Read All) ==========
-    public function index()
+    public function index(Request $request)
     {
         $user = Auth::user();
+        $searchQuery = $request->query('q');
 
-        // Semua pengguna bisa melihat semua data
-        $bookAuthors = BookAuthor::with(['book', 'author'])->get();
+        $bookAuthorsQuery = BookAuthor::with(['book', 'author']);
+
+        if ($searchQuery) {
+            $bookAuthorsQuery->whereHas('book', function ($query) use ($searchQuery) {
+                $query->where('title', 'like', '%' . $searchQuery . '%');
+            })->orWhereHas('author', function ($query) use ($searchQuery) {
+                $query->where('name', 'like', '%' . $searchQuery . '%');
+            });
+        }
+
+        $bookAuthors = $bookAuthorsQuery->get();
+
+        $formattedResults = $bookAuthors->map(function ($item) {
+            return [
+                'id' => $item->id,
+                'type' => 'bookauthor',
+                'title' => $item->book->title . ' - ' . $item->author->name,
+                'bookTitle' => $item->book->title,
+                'authorName' => $item->author->name,
+                'book_id' => $item->book->book_id,
+                'author_id' => $item->author->author_id,
+                'stock' => $item->book->stock,
+                'nationality' => $item->author->nationality
+            ];
+        });
 
         return response()->json($bookAuthors);
     }
@@ -79,36 +110,17 @@ class BookAuthorsController extends Controller
     // ========== UPDATE ==========
     public function update(Request $request, $id)
     {
-        $user = Auth::user();
-
-        // Hanya admin dan manager
-        if (!in_array($user->email, ['admin@gmail.com', 'manager@gmail.com'])) {
-            return response()->json(['message' => 'Akses ditolak'], 403);
-        }
-
         $validated = $request->validate([
-            'book_id' => 'required|string',
-            'author_id' => 'required|string',
+            'book_id' => 'required|exists:books,book_id',
+            'author_id' => 'required|exists:authors,author_id',
         ]);
 
-        // Pastikan book_id dan author_id valid
-        if (!Book::where('book_id', $validated['book_id'])->exists()) {
-            return response()->json(['message' => 'book_id tidak ditemukan'], 404);
-        }
+        $bookAuthor = BookAuthor::findOrFail($id);
+        $bookAuthor->book_id = $validated['book_id'];
+        $bookAuthor->author_id = $validated['author_id'];
+        $bookAuthor->save();
 
-        if (!Author::where('author_id', $validated['author_id'])->exists()) {
-            return response()->json(['message' => 'author_id tidak ditemukan'], 404);
-        }
-
-        $bookAuthor = BookAuthor::find($id);
-
-        if (!$bookAuthor) {
-            return response()->json(['message' => 'Data tidak ditemukan'], 404);
-        }
-
-        $bookAuthor->update($validated);
-
-        return response()->json(['message' => 'Data berhasil diupdate', 'data' => $bookAuthor]);
+        return response()->json(['message' => 'Relasi buku-penulis berhasil diperbarui']);
     }
 
     // ========== DELETE ==========
@@ -130,5 +142,42 @@ class BookAuthorsController extends Controller
         $bookAuthor->delete();
 
         return response()->json(['message' => 'Data berhasil dihapus']);
+    }
+
+    public function search(Request $request)
+    {
+        $query = $request->query('q');
+
+        if (!$query) {
+            return response()->json([], 200);
+        }
+
+        $results = BookAuthor::with(['book', 'author'])
+            ->whereHas('book', function ($q) use ($query) {
+                $q->where('title', 'like', '%' . $query . '%');
+            })
+            ->orWhereHas('author', function ($q) use ($query) {
+                $q->where('name', 'like', '%' . $query . '%');
+            })
+            ->get();
+
+        // Tambahkan ID relasi di sini
+        $formattedResults = $results->map(function ($item) {
+            return [
+                'id' => $item->id, // PASTIKAN ID RELASI DITAMBAHKAN
+                'book' => $item->book ? [
+                    'book_id' => $item->book->book_id,
+                    'title' => $item->book->title,
+                    'stock' => $item->book->stock
+                ] : null,
+                'author' => $item->author ? [
+                    'author_id' => $item->author->author_id,
+                    'name' => $item->author->name,
+                    'nationality' => $item->author->nationality
+                ] : null
+            ];
+        });
+
+        return response()->json($formattedResults);
     }
 }

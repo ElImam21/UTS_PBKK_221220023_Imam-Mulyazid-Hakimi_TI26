@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
 {
@@ -40,59 +41,115 @@ class UserController extends Controller
 
         // Selain itu, tolak akses
         return response()->json(['message' => 'Akses ditolak'], 403);
+        
     }
 
-
-    // Update user berdasarkan ID
-    public function update(Request $request, $id)
+    public function update(Request $request, $user_id)
     {
-        $user = Auth::user();
+        // Validasi data yang dikirim
+        $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'email' => 'sometimes|email|max:255',
+            'membership_date' => 'sometimes|date'
+        ]);
 
-        // Admin, Manager, atau user yang sesuai hanya bisa update
-        if (
-            $user->email === 'admin@gmail.com' ||
-            $user->email === 'manager@gmail.com' ||
-            $user->user_id === $id
-        ) {
-            $target = User::findOrFail($id);
+        // Temukan user berdasarkan kolom user_id
+        $user = User::where('user_id', $user_id)->firstOrFail();
 
-            // Validasi opsional (tambahkan jika diperlukan)
-            $validated = $request->validate([
-                'name' => 'sometimes|required|string',
-                'email' => 'sometimes|required|email',
-                'password' => 'sometimes|required|string|min:6'
-            ]);
-
-            $target->update($validated);
-
-            return response()->json(['message' => 'User berhasil diupdate'], 200);
+        // Update hanya kolom yang dikirim
+        if ($request->has('name')) {
+            $user->name = $request->name;
         }
 
-        return response()->json(['message' => 'Akses ditolak'], 403);
-    }
-
-    // Hapus user berdasarkan ID
-    public function destroy($id)
-    {
-        $user = Auth::user();
-
-        if (
-            $user->email === 'admin@gmail.com' ||
-            $user->email === 'manager@gmail.com' ||
-            $user->user_id === $id // user biasa hanya bisa hapus dirinya sendiri
-        ) {
-            $target = User::findOrFail($id);
-            $target->delete();
-
-            return response()->json(['message' => 'User berhasil dihapus'], 200);
+        if ($request->has('email')) {
+            $user->email = $request->email;
         }
 
-        return response()->json(['message' => 'Akses ditolak'], 403);
+        if ($request->has('membership_date')) {
+            $user->membership_date = $request->membership_date;
+        }
+
+        $user->save();
+
+        return response()->json([
+            'message' => 'Pengguna berhasil diperbarui',
+            'data' => $user
+        ]);
     }
 
-    // Tidak digunakan dalam apiResource kecuali kamu override
+    public function destroy($user_id)
+    {
+        $user = User::where('user_id', $user_id)->firstOrFail();
+
+        $user->delete();
+
+        return response()->json([
+            'message' => 'Pengguna berhasil dihapus'
+        ]);
+    }
+
     public function store(Request $request)
     {
         return response()->json(['message' => 'Registrasi user tidak diizinkan di sini'], 403);
+    }
+
+    public function changePassword(Request $request)
+    {
+        $request->validate([
+            'old_password' => 'required',
+            'new_password' => 'required|min:6',
+        ]);
+
+        $user = Auth::user();
+
+        // Periksa apakah password lama cocok
+        if (!Hash::check($request->old_password, $user->password)) {
+            return response()->json(['message' => 'Password lama tidak cocok'], 401);
+        }
+
+        // Update password baru
+        $user->password = Hash::make($request->new_password);
+        $user->save();
+
+        return response()->json(['message' => 'Password berhasil diubah']);
+    }
+
+    public function search(Request $request)
+    {
+        $request->validate([
+            'name' => 'sometimes|string',
+        ]);
+
+        $user = Auth::user();
+
+        // Validasi akses
+        if (!in_array($user->email, ['admin@gmail.com', 'manager@gmail.com'])) {
+            return response()->json(['message' => 'Akses ditolak'], 403);
+        }
+
+        $name = $request->query('name');
+        $query = User::query();
+
+        if ($name) {
+            // Fokus hanya pada pencarian NAMA (bukan email)
+            $query->where(function ($q) use ($name) {
+                $q->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($name) . '%']);
+            });
+        }
+
+        $users = $query->get()->map(function ($user) {
+            return [
+                'user_id' => $user->user_id,
+                'type' => 'user',
+                'name' => $user->name,
+                'email' => $user->email,
+                'membershipDate' => $user->membership_date
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $users
+        ]);
     }
 }

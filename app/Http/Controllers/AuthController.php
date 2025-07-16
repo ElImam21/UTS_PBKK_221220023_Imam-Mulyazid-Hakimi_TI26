@@ -6,8 +6,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str; // Untuk ULID
-use Illuminate\Support\Facades\Auth; // Untuk akses user yang login
 use App\Models\User;
+use App\Models\UserDetail;
 
 class AuthController extends Controller
 {
@@ -20,17 +20,34 @@ class AuthController extends Controller
         ]);
 
         if ($validator->fails()) {
+            // Tambahkan pengecekan khusus untuk email sudah terdaftar
+            if ($validator->errors()->has('email')) {
+                return response()->json([
+                    'message' => 'Email sudah digunakan'
+                ], 422);
+            }
+
             return response()->json([
                 'errors' => $validator->errors()
             ], 422);
         }
 
+        // Generate ULID sekali saja
+        $ulid = Str::ulid();
+
+        // Buat user utama
         $user = User::create([
-            'user_id' => Str::ulid(), // Generate ULID
+            'user_id' => $ulid,
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'membership_date' => now()->toDateString(),
+        ]);
+
+        // Otomatis buat record di users_detail
+        UserDetail::create([
+            'user_id' => $ulid,
+            // Kolom lainnya bisa diisi default value atau dibiarkan null
         ]);
 
         return response()->json([
@@ -51,32 +68,26 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // Hapus token lama jika hanya ingin satu sesi login
+        // Hapus token lama
         $user->tokens()->delete();
 
+        // Buat token baru
         $token = $user->createToken('access_token')->plainTextToken;
 
         return response()->json([
             'message' => 'Login berhasil',
-            'token' => $token,
-            'user' => $user
+            'user' => $user,
+            'token' => $token // Kirim token ke frontend
         ]);
     }
-
     // ✅ Fungsi Logout: Hapus token yang sedang aktif
     public function logout(Request $request)
     {
-        $token = $request->user()->currentAccessToken();
+        // Hapus semua token user
+        $request->user()->tokens()->delete();
 
-        if ($token) {
-            $token->delete(); // Hapus token saat ini
-            return response()->json([
-                'message' => 'Logout berhasil, token dihapus.'
-            ]);
-        } else {
-            return response()->json([
-                'message' => 'Token tidak ditemukan atau sudah tidak aktif.'
-            ], 400);
-        }
+        return response()->json([
+            'message' => 'Logout berhasil, semua token dihapus.'
+        ]);
     }
 }

@@ -15,6 +15,8 @@ return new class extends Migration {
             // Foreign Key Constraints
             $table->foreign('book_id')->references('book_id')->on('books')->onDelete('cascade');
             $table->foreign('author_id')->references('author_id')->on('authors')->onDelete('cascade');
+
+            $table->unique(['book_id', 'author_id']);
         });
     }
 

@@ -19,6 +19,7 @@ class Loan extends Model
         'loans_id',
         'user_id',
         'book_id',
+        'return_date',
     ];
 
     // Relasi ke User

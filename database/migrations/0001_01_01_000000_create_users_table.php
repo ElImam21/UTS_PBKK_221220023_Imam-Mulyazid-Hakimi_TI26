@@ -21,9 +21,6 @@ return new class extends Migration
             $table->date('membership_date')->nullable(false);
         });
 
-        // Hapus pembuatan tabel berikut karena tidak diminta
-        // Schema::create('password_reset_tokens', ...);
-        // Schema::create('sessions', ...);
     }
 
     /**

@@ -49,7 +49,7 @@ class BooksController extends Controller
     public function store(Request $request)
     {
         if (!$this->isAdminOrManager()) {
-            return response()->json(['message' => 'Akses di tolak'], 403);
+            return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
         $validated = $request->validate([
@@ -60,12 +60,15 @@ class BooksController extends Controller
             'stock' => 'required|integer',
         ]);
 
-        // Tambahkan ULID sebagai book_id secara otomatis
         $validated['book_id'] = (string) Str::ulid();
 
-        $book = Book::create($validated);
-
-        return response()->json($book, 201);
+        try {
+            $book = Book::create($validated);
+            return response()->json($book, 201);
+        } catch (\Exception $e) {
+            Log::error('Gagal menyimpan buku: ' . $e->getMessage());
+            return response()->json(['message' => 'Gagal menambahkan buku'], 500);
+        }
     }
 
     public function show($id)

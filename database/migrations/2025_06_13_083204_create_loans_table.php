@@ -9,11 +9,9 @@ return new class extends Migration {
     {
         Schema::create('loans', function (Blueprint $table) {
             $table->string('loans_id')->primary(); // ULID sebagai primary key
-
             $table->string('user_id'); // Foreign key ke users
             $table->string('book_id'); // Foreign key ke books
-
-            $table->timestamps();
+            $table->date('return_date');
 
             // Relasi
             $table->foreign('user_id')->references('user_id')->on('users')->onDelete('cascade');

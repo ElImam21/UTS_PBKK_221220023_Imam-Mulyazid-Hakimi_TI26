@@ -9,8 +9,8 @@ return new class extends Migration {
     {
         Schema::create('books', function (Blueprint $table) {
             $table->ulid('book_id')->primary(); // ULID sebagai primary key
-            $table->string('title')->nullable(false);
-            $table->string('isbn')->nullable(false);
+            $table->string('title')->unique();
+            $table->string('isbn')->unique();
             $table->string('publisher')->nullable(false);
             $table->string('year_publised')->nullable(false);
             $table->integer('stock')->nullable(false);

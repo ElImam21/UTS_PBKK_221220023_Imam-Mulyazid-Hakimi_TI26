@@ -82,6 +82,14 @@ class AuthorsController extends Controller
         }
 
         $author = Author::findOrFail($id);
+
+        // Validasi input
+        $request->validate([
+            'name' => 'required|string',
+            'nationality' => 'required|string',
+            'birthdate' => 'required|string',
+        ]);
+
         $author->update($request->all());
 
         return response()->json([
@@ -89,7 +97,6 @@ class AuthorsController extends Controller
             'data' => $author
         ]);
     }
-
     public function destroy($id)
     {
         if (!$this->isAdminOrManager()) {

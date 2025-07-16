@@ -26,22 +26,24 @@ class LoansController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        // Admin/Manager dapat melihat semua data atau berdasarkan loans_id / user_id
         if ($this->isAdminOrManager()) {
-            if ($request->has('loans_id')) {
-                $loan = Loan::with(['user', 'book'])->where('loans_id', $request->loans_id)->first();
-                return $loan ? response()->json($loan) : response()->json(['message' => 'Loan not found'], 404);
+            $query = Loan::with(['user', 'book']);
+
+            // Pencarian berdasarkan nama user atau judul buku
+            if ($request->has('name')) {
+                $searchTerm = $request->name;
+                $query->whereHas('user', function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', '%' . $searchTerm . '%');
+                })->orWhereHas('book', function ($q) use ($searchTerm) {
+                    $q->where('title', 'like', '%' . $searchTerm . '%');
+                });
             }
 
-            if ($request->has('user_id')) {
-                $loan = Loan::with(['user', 'book'])->where('user_id', $request->user_id)->first();
-                return $loan ? response()->json($loan) : response()->json(['message' => 'Loan not found'], 404);
-            }
+            $loans = $query->get();
 
-            return response()->json(Loan::with(['user', 'book'])->get());
+            return response()->json($loans);
         }
 
-        // Customer biasa hanya bisa melihat pinjamannya sendiri
         return response()->json(
             Loan::with(['user', 'book'])
                 ->where('user_id', $user->user_id)
@@ -125,45 +127,42 @@ class LoansController extends Controller
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
-        $loan = Loan::where('loans_id', $id)->first();
+        $loan = Loan::find($id);
         if (!$loan) {
             return response()->json(['message' => 'Loan tidak ditemukan'], 404);
         }
 
         $validated = $request->validate([
-            'user_id' => 'sometimes|required|string',
-            'book_id' => 'sometimes|required|string',
+            'user_id' => 'required|string',
+            'book_id' => 'required|string',
+            'return_date' => 'nullable|date'
         ]);
 
-        if (isset($validated['user_id']) && !User::where('user_id', $validated['user_id'])->exists()) {
-            return response()->json(['message' => 'User_id tidak ditemukan'], 404);
+        $user = User::where('user_id', $validated['user_id'])->first();
+        $book = Book::where('book_id', $validated['book_id'])->first();
+
+        if (!$user || !$book) {
+            return response()->json(['message' => 'User atau Book tidak ditemukan'], 404);
         }
 
-        if (isset($validated['book_id']) && !Book::where('book_id', $validated['book_id'])->exists()) {
-            return response()->json(['message' => 'Book_id tidak ditemukan'], 404);
-        }
-
-        $loan->update($validated);
+        $loan->update([
+            'user_id' => $user->user_id,
+            'book_id' => $book->book_id,
+            'return_date' => $validated['return_date'] ?? null
+        ]);
 
         return response()->json([
             'message' => 'Update berhasil',
-            'data' => $loan->fresh()
+            'data' => $loan->fresh(['user', 'book'])
         ]);
     }
 
     public function destroy($id)
     {
-        if (!$this->isAdminOrManager()) {
-            return response()->json(['message' => 'Akses ditolak'], 403);
-        }
-
-        $loan = Loan::where('loans_id', $id)->first();
-        if (!$loan) {
-            return response()->json(['message' => 'Loan tidak ditemukan'], 404);
-        }
-
+        $loan = Loan::findOrFail($id);
         $loan->delete();
 
-        return response()->json(['message' => 'Loan berhasil dihapus']);
+        return response()->json(['message' => 'Loan deleted successfully']);
     }
+
 }
